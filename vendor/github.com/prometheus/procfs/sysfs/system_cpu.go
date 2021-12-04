@@ -1,4 +1,6 @@
 // Copyright 2018 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -137,6 +139,34 @@ func parseCPUThermalThrottle(cpuPath string) (*CPUThermalThrottle, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// Try to get the base frequency of the CPU package with the given ID.
+// Usually the smbios type 4 information contains the base frequency
+// as 'Current Speed' and max. frequency as 'Max. Speed'. Unfortunately
+// this info is not exposed via sysfs and thus would required higher
+// or root privileges, which is not really an option.
+func (fs FS) SystemCpuBaseFrequency(cpuName string) (string, error) {
+	cpuPath := fs.sys.Path("devices/system/cpu/cpu") + cpuName + "/cpufreq"
+
+	// for Intel CPUs this usually works
+	v, err := util.SysReadFile(filepath.Join(cpuPath, "base_frequency"))
+	if err == nil {
+		return v + "000", nil
+	}
+	if !(os.IsNotExist(err) || os.IsPermission(err)) {
+		return "0", err
+	}
+	// AMD CPUs do not provide this info, but usually the bios_limit is
+	// set to the base frequeny.
+	v, err = util.SysReadFile(filepath.Join(cpuPath, "bios_limit"))
+	if err == nil {
+		return v + "000", nil
+	}
+	if !(os.IsNotExist(err) || os.IsPermission(err)) {
+		return "0", err
+	}
+	return "0", nil
 }
 
 // SystemCpufreq returns CPU frequency metrics for all CPUs.

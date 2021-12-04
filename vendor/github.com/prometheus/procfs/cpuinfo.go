@@ -1,4 +1,6 @@
 // Copyright 2019 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -38,7 +40,7 @@ type CPUInfo struct {
 	Microcode       string
 	CPUMHz          float64
 	CacheSize       string
-	PhysicalID      string
+	PhysicalID      uint
 	Siblings        uint
 	CoreID          string
 	CPUCores        uint
@@ -125,7 +127,11 @@ func parseCPUInfoX86(info []byte) ([]CPUInfo, error) {
 		case "cache size":
 			cpuinfo[i].CacheSize = field[1]
 		case "physical id":
-			cpuinfo[i].PhysicalID = field[1]
+			v, err := strconv.ParseInt(field[1],0,32)
+			if err != nil {
+				return nil, err
+			}
+			cpuinfo[i].PhysicalID =  uint(v)
 		case "siblings":
 			v, err := strconv.ParseUint(field[1], 0, 32)
 			if err != nil {
@@ -315,7 +321,11 @@ func parseCPUInfoS390X(info []byte) ([]CPUInfo, error) {
 			}
 			cpuinfo[i].CPUMHz = v
 		case "physical id":
-			cpuinfo[i].PhysicalID = field[1]
+			v, err := strconv.ParseInt(field[1],0,32)
+			if err != nil {
+				return nil, err
+			}
+			cpuinfo[i].PhysicalID =  uint(v)
 		case "core id":
 			cpuinfo[i].CoreID = field[1]
 		case "cpu cores":
