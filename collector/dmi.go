@@ -1,4 +1,6 @@
 // Copyright 2021 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -87,10 +89,7 @@ func NewDMICollector(logger log.Logger) (Collector, error) {
 	return &dmiCollector{
 		infoDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "dmi", "info"),
-			"A metric with a constant '1' value labeled by bios_date, bios_release, bios_vendor, bios_version, "+
-				"board_asset_tag, board_name, board_serial, board_vendor, board_version, chassis_asset_tag, "+
-				"chassis_serial, chassis_vendor, chassis_version, product_family, product_name, product_serial, "+
-				"product_sku, product_uuid, product_version, system_vendor if provided by DMI.",
+			"A constant metric with label entries deduced from the DMI (see /sys/class/dmi/id/). Always 1.",
 			labels, nil,
 		),
 		values: values,
