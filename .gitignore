@@ -2,9 +2,19 @@
 *.o
 *.a
 *.so
+.*.swp
+*~
+*.tmp
+*.dep
+*.rej
+*.orig
+.nfs*
+*.DS_Store
+core
+.vscode
 
 # Folders
-_obj
+_# Foldereobj
 _test
 
 # Architecture specific extensions/prefixes
@@ -35,4 +45,3 @@ dependencies-stamp
 # Test files extracted from ttar
 collector/fixtures/sys/
 
-/vendor
