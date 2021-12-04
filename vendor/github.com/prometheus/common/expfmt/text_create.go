@@ -1,4 +1,6 @@
 // Copyright 2014 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -53,6 +55,7 @@ var (
 			return &b
 		},
 	}
+	Comments = true
 )
 
 // MetricFamilyToText converts a MetricFamily proto message into text format and
@@ -93,7 +96,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err e
 	var n int
 
 	// Comments, first HELP, then TYPE.
-	if in.Help != nil {
+	if Comments && in.Help != nil {
 		n, err = w.WriteString("# HELP ")
 		written += n
 		if err != nil {
@@ -120,6 +123,8 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err e
 			return
 		}
 	}
+	metricType := in.GetType()
+	if Comments {
 	n, err = w.WriteString("# TYPE ")
 	written += n
 	if err != nil {
@@ -130,7 +135,6 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err e
 	if err != nil {
 		return
 	}
-	metricType := in.GetType()
 	switch metricType {
 	case dto.MetricType_COUNTER:
 		n, err = w.WriteString(" counter\n")
@@ -148,6 +152,7 @@ func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err e
 	written += n
 	if err != nil {
 		return
+	}
 	}
 
 	// Finally the samples, one line for each.
