@@ -1,4 +1,6 @@
 // Copyright 2015 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -45,22 +47,30 @@ type handler struct {
 	// the exporter itself.
 	exporterMetricsRegistry *prometheus.Registry
 	includeExporterMetrics  bool
+	includeGoMetrics        bool
 	maxRequests             int
 	logger                  log.Logger
 }
 
-func newHandler(includeExporterMetrics bool, maxRequests int, logger log.Logger) *handler {
+func newHandler(includeExporterMetrics bool, includeGoMetrics bool, maxRequests int, logger log.Logger) *handler {
 	h := &handler{
 		exporterMetricsRegistry: prometheus.NewRegistry(),
 		includeExporterMetrics:  includeExporterMetrics,
+		includeGoMetrics:        includeGoMetrics,
 		maxRequests:             maxRequests,
 		logger:                  logger,
 	}
 	if h.includeExporterMetrics {
-		h.exporterMetricsRegistry.MustRegister(
-			promcollectors.NewProcessCollector(promcollectors.ProcessCollectorOpts{}),
-			promcollectors.NewGoCollector(),
-		)
+		if !h.includeGoMetrics {
+			h.exporterMetricsRegistry.MustRegister(
+				promcollectors.NewProcessCollector(promcollectors.ProcessCollectorOpts{}),
+			)
+		} else {
+			h.exporterMetricsRegistry.MustRegister(
+				promcollectors.NewProcessCollector(promcollectors.ProcessCollectorOpts{}),
+				promcollectors.NewGoCollector(),
+			)
+		}
 	}
 	if innerHandler, err := h.innerHandler(); err != nil {
 		panic(fmt.Sprintf("Couldn't create metrics handler: %s", err))
@@ -154,6 +164,10 @@ func main() {
 			"web.disable-exporter-metrics",
 			"Exclude metrics about the exporter itself (promhttp_*, process_*, go_*).",
 		).Bool()
+		disableGoMetrics = kingpin.Flag(
+			"web.disable-go-metrics",
+			"Exclude go_* metrics about the exporter itself.",
+		).Bool()
 		maxRequests = kingpin.Flag(
 			"web.max-requests",
 			"Maximum number of parallel scrape requests. Use 0 to disable.",
@@ -185,7 +199,7 @@ func main() {
 		level.Warn(logger).Log("msg", "Node Exporter is running as root user. This exporter is designed to run as unpriviledged user, root is not required.")
 	}
 
-	http.Handle(*metricsPath, newHandler(!*disableExporterMetrics, *maxRequests, logger))
+	http.Handle(*metricsPath, newHandler(!*disableExporterMetrics, !*disableGoMetrics, *maxRequests, logger))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
 			<head><title>Node Exporter</title></head>
