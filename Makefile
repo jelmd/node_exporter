@@ -11,6 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Just build node-exporter by default and skip all the bloat. Use 'make all'
+# explicitly to launch all the tamm tamm gähn ...
+.DEFAULT_GOAL := build
+
 # Ensure that 'all' is the default target otherwise it will be the first target from Makefile.common.
 all::
 
