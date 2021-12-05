@@ -1,4 +1,6 @@
 // Copyright 2019 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,29 +30,18 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/procfs/internal/util"
 )
 
-const lineFormat = "avg10=%f avg60=%f avg300=%f total=%d"
-
-// PSILine is a single line of values as returned by /proc/pressure/*
-// The Avg entries are averages over n seconds, as a percentage
-// The Total line is in microseconds
-type PSILine struct {
-	Avg10  float64
-	Avg60  float64
-	Avg300 float64
-	Total  uint64
-}
-
 // PSIStats represent pressure stall information from /proc/pressure/*
 // Some indicates the share of time in which at least some tasks are stalled
 // Full indicates the share of time in which all non-idle tasks are stalled simultaneously
 type PSIStats struct {
-	Some *PSILine
-	Full *PSILine
+	Some int64
+	Full int64
 }
 
 // PSIStatsForResource reads pressure stall information for the specified
@@ -71,29 +62,21 @@ func parsePSIStats(resource string, r io.Reader) (PSIStats, error) {
 
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		l := scanner.Text()
-		prefix := strings.Split(l, " ")[0]
-		switch prefix {
-		case "some":
-			psi := PSILine{}
-			_, err := fmt.Sscanf(l, fmt.Sprintf("some %s", lineFormat), &psi.Avg10, &psi.Avg60, &psi.Avg300, &psi.Total)
-			if err != nil {
-				return PSIStats{}, err
-			}
-			psiStats.Some = &psi
-		case "full":
-			psi := PSILine{}
-			_, err := fmt.Sscanf(l, fmt.Sprintf("full %s", lineFormat), &psi.Avg10, &psi.Avg60, &psi.Avg300, &psi.Total)
-			if err != nil {
-				return PSIStats{}, err
-			}
-			psiStats.Full = &psi
-		default:
-			// If we encounter a line with an unknown prefix, ignore it and move on
-			// Should new measurement types be added in the future we'll simply ignore them instead
-			// of erroring on retrieval
+		s := scanner.Text()
+		i := strings.LastIndexByte(s, '=')
+		if i == -1 {
 			continue
 		}
+		val, err := strconv.ParseInt(s[i+1:], 10, 64)
+		if err != nil {
+			return psiStats, err
+		}
+		if strings.HasPrefix(s, "some ") {
+			psiStats.Some = val
+		} else if strings.HasPrefix(s, "full ") {
+			psiStats.Full = val
+		}
+		// If we encounter a line with an unknown prefix, ignore it and move on
 	}
 
 	return psiStats, nil

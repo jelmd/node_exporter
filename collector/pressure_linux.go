@@ -1,4 +1,6 @@
 // Copyright 2019 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -57,28 +59,28 @@ func NewPressureStatsCollector(logger log.Logger) (Collector, error) {
 
 	return &pressureStatsCollector{
 		cpu: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "pressure", "cpu_waiting_seconds_total"),
-			"Total time in seconds that processes have waited for CPU time",
+			prometheus.BuildFQName(namespace, "psi", "cpu_some_us"),
+			"Total share of time in µs in which at least some tasks are stalled on CPU time",
 			nil, nil,
 		),
 		io: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "pressure", "io_waiting_seconds_total"),
-			"Total time in seconds that processes have waited due to IO congestion",
+			prometheus.BuildFQName(namespace, "psi", "io_some_us"),
+			"Total share of time in µs at least some tasks are stalled on IO",
 			nil, nil,
 		),
 		ioFull: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "pressure", "io_stalled_seconds_total"),
-			"Total time in seconds no process could make progress due to IO congestion",
+			prometheus.BuildFQName(namespace, "psi", "io_full_us"),
+			"Total share of time in µs in which all non-idle tasks are stalled on IO simultaneously",
 			nil, nil,
 		),
 		mem: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "pressure", "memory_waiting_seconds_total"),
-			"Total time in seconds that processes have waited for memory",
+			prometheus.BuildFQName(namespace, "psi", "memory_some_us"),
+			"Total share of time in µs at least some tasks are stalled on memory",
 			nil, nil,
 		),
 		memFull: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "pressure", "memory_stalled_seconds_total"),
-			"Total time in seconds no process could make progress due to memory congestion",
+			prometheus.BuildFQName(namespace, "psi", "memory_full_us"),
+			"Total share of time in µs in which all non-idle tasks are stalled on memory simultaneously",
 			nil, nil,
 		),
 		fs:     fs,
@@ -104,13 +106,13 @@ func (c *pressureStatsCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 		switch res {
 		case "cpu":
-			ch <- prometheus.MustNewConstMetric(c.cpu, prometheus.CounterValue, float64(vals.Some.Total)/1000.0/1000.0)
+			ch <- prometheus.MustNewConstMetric(c.cpu, prometheus.CounterValue, float64(vals.Some))
 		case "io":
-			ch <- prometheus.MustNewConstMetric(c.io, prometheus.CounterValue, float64(vals.Some.Total)/1000.0/1000.0)
-			ch <- prometheus.MustNewConstMetric(c.ioFull, prometheus.CounterValue, float64(vals.Full.Total)/1000.0/1000.0)
+			ch <- prometheus.MustNewConstMetric(c.io, prometheus.CounterValue, float64(vals.Some))
+			ch <- prometheus.MustNewConstMetric(c.ioFull, prometheus.CounterValue, float64(vals.Full))
 		case "memory":
-			ch <- prometheus.MustNewConstMetric(c.mem, prometheus.CounterValue, float64(vals.Some.Total)/1000.0/1000.0)
-			ch <- prometheus.MustNewConstMetric(c.memFull, prometheus.CounterValue, float64(vals.Full.Total)/1000.0/1000.0)
+			ch <- prometheus.MustNewConstMetric(c.mem, prometheus.CounterValue, float64(vals.Some))
+			ch <- prometheus.MustNewConstMetric(c.memFull, prometheus.CounterValue, float64(vals.Full))
 		default:
 			level.Debug(c.logger).Log("msg", "did not account for resource", "resource", res)
 		}
