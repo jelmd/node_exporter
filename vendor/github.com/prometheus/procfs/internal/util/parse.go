@@ -1,4 +1,6 @@
 // Copyright 2018 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -35,15 +37,25 @@ func ParseUint32s(ss []string) ([]uint32, error) {
 }
 
 // ParseUint64s parses a slice of strings into a slice of uint64s.
-func ParseUint64s(ss []string) ([]uint64, error) {
-	us := make([]uint64, 0, len(ss))
-	for _, s := range ss {
+// The optional min parameter allows one to set the minimum length
+// and capacity of the return slice. Otherwise they are set to the
+// length of the given slice.
+func ParseUint64s(ss []string, min ...int) ([]uint64, error) {
+	var n int
+	if len(min) > 0 {
+		n = min[0]
+	}
+	if n < len(ss) {
+		n = len(ss)
+	}
+
+	us := make([]uint64, n)
+	for i, s := range ss {
 		u, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
 			return nil, err
 		}
-
-		us = append(us, u)
+		us[i] = u
 	}
 
 	return us, nil
