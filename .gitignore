@@ -32,6 +32,7 @@ _testmain.go
 *.exe
 dependencies-stamp
 /node_exporter
+/node-exporter
 /.build
 /.deps
 /.release

@@ -7,7 +7,7 @@ repository:
     path: github.com/prometheus/node_exporter
 build:
     binaries:
-        - name: node_exporter
+        - name: node-exporter
     flags: -a -tags 'netgo osusergo static_build'
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
