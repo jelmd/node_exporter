@@ -23,11 +23,18 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs/nfs"
+
+	"gopkg.in/alecthomas/kingpin.v2"
+)
+
+var (
+	skipProto = kingpin.Flag("collector.nfsd.skip", "Skip stats for the given comma separated list of NFS versions, i.e. 2, 3, 4, or 4ops.").Default("").String()
 )
 
 // A nfsdCollector is a Collector which gathers metrics from /proc/net/rpc/nfsd.
@@ -44,6 +51,10 @@ type nfsdCollector struct {
 	nfsV3callDesc    *prometheus.Desc
 	nfsV4callDesc    *prometheus.Desc
 	nfsV4opDesc      *prometheus.Desc
+	skipV2           bool
+	skipV3           bool
+	skipV4           bool
+	skipV4ops        bool
 	logger           log.Logger
 }
 
@@ -60,6 +71,22 @@ func NewNFSdCollector(logger log.Logger) (Collector, error) {
 	fs, err := nfs.NewFS(*procPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open procfs: %w", err)
+	}
+	skipV2, skipV3, skipV4, skipV4ops := false, false, false, false
+	v := strings.Split(*skipProto,",")
+	for _, s := range v {
+		s = strings.TrimSpace(s)
+		if s == "2" {
+			skipV2 = true;
+		} else if s == "3" {
+			skipV3 = true;
+		} else if s == "4" {
+			skipV4 = true;
+		} else if s == "4ops" {
+			skipV4ops = true;
+		} else {
+			level.Warn(logger).Log("msg", "Unknown NFS version", s , "ignored.")
+		}
 	}
 
 	return &nfsdCollector{
@@ -119,6 +146,10 @@ func NewNFSdCollector(logger log.Logger) (Collector, error) {
 			"Total number of NFS v4 operations by name.",
 			[]string{"name"}, nil,
 		),
+		skipV2: skipV2,
+		skipV3: skipV3,
+		skipV4: skipV4,
+		skipV4ops: skipV4ops,
 		logger: logger,
 	}, nil
 }
@@ -192,6 +223,9 @@ func (c *nfsdCollector) updateNFSdServerRPCStats(ch chan<- prometheus.Metric, s 
 
 // updateNFSdRequestsv2Stats collects statistics for NFSv2 requests.
 func (c *nfsdCollector) updateNFSdRequestsV2Stats(ch chan<- prometheus.Metric, s *nfs.V2stats) {
+	if c.skipV2 {
+		return
+	}
 	v := reflect.ValueOf(s).Elem()
 	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
@@ -201,6 +235,9 @@ func (c *nfsdCollector) updateNFSdRequestsV2Stats(ch chan<- prometheus.Metric, s
 
 // updateNFSdRequestsv3Stats collects statistics for NFSv3 requests.
 func (c *nfsdCollector) updateNFSdRequestsV3Stats(ch chan<- prometheus.Metric, s *nfs.V3stats) {
+	if c.skipV3 {
+		return
+	}
 	v := reflect.ValueOf(s).Elem()
 	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
@@ -210,6 +247,9 @@ func (c *nfsdCollector) updateNFSdRequestsV3Stats(ch chan<- prometheus.Metric, s
 
 // updateNFSdRequestsv4Stats collects statistics for NFSv4 requests.
 func (c *nfsdCollector) updateNFSdRequestsV4Stats(ch chan<- prometheus.Metric, s *nfs.V4statsServer) {
+	if c.skipV4 {
+		return
+	}
 	v := reflect.ValueOf(s).Elem()
 	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
@@ -219,6 +259,9 @@ func (c *nfsdCollector) updateNFSdRequestsV4Stats(ch chan<- prometheus.Metric, s
 
 // updateNFSdRequestsV4Ops collects statistics for NFSv4 operations.
 func (c *nfsdCollector) updateNFSdRequestsV4Ops(ch chan<- prometheus.Metric, s *nfs.V4ops) {
+	if c.skipV4ops {
+		return
+	}
 	v := reflect.ValueOf(s).Elem()
 	for i := int(s.Fields); i > 2; i-- {
 		field := v.Field(i)
