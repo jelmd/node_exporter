@@ -40,13 +40,13 @@ endif
 
 # Use CGO for non-Linux builds.
 ifeq ($(GOOS), linux)
-	PROMU_CONF ?= .promu.yml
+	PROMU_CONF ?= .promu-cgo.yml
 else
 	ifndef GOOS
 		ifeq ($(GOHOSTOS), linux)
-			PROMU_CONF ?= .promu.yml
-		else
 			PROMU_CONF ?= .promu-cgo.yml
+		else
+			PROMU_CONF ?= .promu.yml
 		endif
 	else
 		# Do not use CGO for openbsd/amd64 builds
