@@ -1,4 +1,6 @@
 // Copyright 2016 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,14 +35,12 @@ const (
 )
 
 type nfsCollector struct {
-	fs                                nfs.FS
-	nfsNetReadsDesc                   *prometheus.Desc
-	nfsNetConnectionsDesc             *prometheus.Desc
-	nfsRPCOperationsDesc              *prometheus.Desc
-	nfsRPCRetransmissionsDesc         *prometheus.Desc
-	nfsRPCAuthenticationRefreshesDesc *prometheus.Desc
-	nfsProceduresDesc                 *prometheus.Desc
-	logger                            log.Logger
+	fs               nfs.FS
+	nfsRpcOpDesc     *prometheus.Desc
+	nfsV2callDesc    *prometheus.Desc
+	nfsV3callDesc    *prometheus.Desc
+	nfsV4callDesc    *prometheus.Desc
+	logger           log.Logger
 }
 
 func init() {
@@ -56,48 +56,32 @@ func NewNfsCollector(logger log.Logger) (Collector, error) {
 
 	return &nfsCollector{
 		fs: fs,
-		nfsNetReadsDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "packets_total"),
-			"Total NFSd network packets (sent+received) by protocol type.",
-			[]string{"protocol"},
-			nil,
+		nfsRpcOpDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, nfsSubsystem, "rpc_ops"),
+			"Total number of RPC operations made by the NFS client.",
+			[]string{"name"}, nil,
 		),
-		nfsNetConnectionsDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "connections_total"),
-			"Total number of NFSd TCP connections.",
-			nil,
-			nil,
+		nfsV2callDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, nfsSubsystem, "v2_calls"),
+			"Number of NFS v2 calls made by the client.",
+			[]string{"name"}, nil,
 		),
-		nfsRPCOperationsDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "rpcs_total"),
-			"Total number of RPCs performed.",
-			nil,
-			nil,
+		nfsV3callDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, nfsSubsystem, "v3_calls"),
+			"Number of NFS v3 calls made by the client.",
+			[]string{"name"}, nil,
 		),
-		nfsRPCRetransmissionsDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "rpc_retransmissions_total"),
-			"Number of RPC transmissions performed.",
-			nil,
-			nil,
-		),
-		nfsRPCAuthenticationRefreshesDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "rpc_authentication_refreshes_total"),
-			"Number of RPC authentication refreshes performed.",
-			nil,
-			nil,
-		),
-		nfsProceduresDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, nfsSubsystem, "requests_total"),
-			"Number of NFS procedures invoked.",
-			[]string{"proto", "method"},
-			nil,
+		nfsV4callDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, nfsSubsystem, "v4_calls"),
+			"Number of NFS v4 calls made by the client.",
+			[]string{"name"}, nil,
 		),
 		logger: logger,
 	}, nil
 }
 
 func (c *nfsCollector) Update(ch chan<- prometheus.Metric) error {
-	stats, err := c.fs.ClientRPCStats()
+	stats, err := c.fs.ProcNetRpcNfsStats()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			level.Debug(c.logger).Log("msg", "Not collecting NFS metrics", "err", err)
@@ -106,70 +90,44 @@ func (c *nfsCollector) Update(ch chan<- prometheus.Metric) error {
 		return fmt.Errorf("failed to retrieve nfs stats: %w", err)
 	}
 
-	c.updateNFSNetworkStats(ch, &stats.Network)
-	c.updateNFSClientRPCStats(ch, &stats.ClientRPC)
-	c.updateNFSRequestsv2Stats(ch, &stats.V2Stats)
-	c.updateNFSRequestsv3Stats(ch, &stats.V3Stats)
-	c.updateNFSRequestsv4Stats(ch, &stats.ClientV4Stats)
+	c.updateNFSClientRPCStats(ch, &stats.RpcClient)
+	c.updateNFSRequestsv2Stats(ch, &stats.V2stats)
+	c.updateNFSRequestsv3Stats(ch, &stats.V3stats)
+	c.updateNFSRequestsv4Stats(ch, &stats.V4statsClient)
 
 	return nil
 }
 
-// updateNFSNetworkStats collects statistics for network packets/connections.
-func (c *nfsCollector) updateNFSNetworkStats(ch chan<- prometheus.Metric, s *nfs.Network) {
-	ch <- prometheus.MustNewConstMetric(c.nfsNetReadsDesc, prometheus.CounterValue,
-		float64(s.UDPCount), "udp")
-	ch <- prometheus.MustNewConstMetric(c.nfsNetReadsDesc, prometheus.CounterValue,
-		float64(s.TCPCount), "tcp")
-	ch <- prometheus.MustNewConstMetric(c.nfsNetConnectionsDesc, prometheus.CounterValue,
-		float64(s.TCPConnect))
-}
-
 // updateNFSClientRPCStats collects statistics for kernel server RPCs.
-func (c *nfsCollector) updateNFSClientRPCStats(ch chan<- prometheus.Metric, s *nfs.ClientRPC) {
-	ch <- prometheus.MustNewConstMetric(c.nfsRPCOperationsDesc, prometheus.CounterValue,
-		float64(s.RPCCount))
-	ch <- prometheus.MustNewConstMetric(c.nfsRPCRetransmissionsDesc, prometheus.CounterValue,
-		float64(s.Retransmissions))
-	ch <- prometheus.MustNewConstMetric(c.nfsRPCAuthenticationRefreshesDesc, prometheus.CounterValue,
-		float64(s.AuthRefreshes))
+func (c *nfsCollector) updateNFSClientRPCStats(ch chan<- prometheus.Metric, s *nfs.RpcClient) {
+	ch <- prometheus.MustNewConstMetric(c.nfsRpcOpDesc, prometheus.CounterValue, float64(s.RPCCount), "request")
+	ch <- prometheus.MustNewConstMetric(c.nfsRpcOpDesc, prometheus.CounterValue, float64(s.Retransmissions), "retransmit")
+	ch <- prometheus.MustNewConstMetric(c.nfsRpcOpDesc, prometheus.CounterValue, float64(s.AuthRefreshes), "authrefresh")
 }
 
 // updateNFSRequestsv2Stats collects statistics for NFSv2 requests.
-func (c *nfsCollector) updateNFSRequestsv2Stats(ch chan<- prometheus.Metric, s *nfs.V2Stats) {
-	const proto = "2"
-
+func (c *nfsCollector) updateNFSRequestsv2Stats(ch chan<- prometheus.Metric, s *nfs.V2stats) {
 	v := reflect.ValueOf(s).Elem()
-	for i := 0; i < v.NumField(); i++ {
+	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
-
-		ch <- prometheus.MustNewConstMetric(c.nfsProceduresDesc, prometheus.CounterValue,
-			float64(field.Uint()), proto, v.Type().Field(i).Name)
+		ch <- prometheus.MustNewConstMetric(c.nfsV2callDesc, prometheus.CounterValue, float64(field.Uint()), v.Type().Field(i).Name)
 	}
 }
 
 // updateNFSRequestsv3Stats collects statistics for NFSv3 requests.
-func (c *nfsCollector) updateNFSRequestsv3Stats(ch chan<- prometheus.Metric, s *nfs.V3Stats) {
-	const proto = "3"
-
+func (c *nfsCollector) updateNFSRequestsv3Stats(ch chan<- prometheus.Metric, s *nfs.V3stats) {
 	v := reflect.ValueOf(s).Elem()
-	for i := 0; i < v.NumField(); i++ {
+	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
-
-		ch <- prometheus.MustNewConstMetric(c.nfsProceduresDesc, prometheus.CounterValue,
-			float64(field.Uint()), proto, v.Type().Field(i).Name)
+		ch <- prometheus.MustNewConstMetric(c.nfsV3callDesc, prometheus.CounterValue, float64(field.Uint()), v.Type().Field(i).Name)
 	}
 }
 
 // updateNFSRequestsv4Stats collects statistics for NFSv4 requests.
-func (c *nfsCollector) updateNFSRequestsv4Stats(ch chan<- prometheus.Metric, s *nfs.ClientV4Stats) {
-	const proto = "4"
-
+func (c *nfsCollector) updateNFSRequestsv4Stats(ch chan<- prometheus.Metric, s *nfs.V4statsClient) {
 	v := reflect.ValueOf(s).Elem()
-	for i := 0; i < v.NumField(); i++ {
+	for i := int(s.Fields); i > 0; i-- {
 		field := v.Field(i)
-
-		ch <- prometheus.MustNewConstMetric(c.nfsProceduresDesc, prometheus.CounterValue,
-			float64(field.Uint()), proto, v.Type().Field(i).Name)
+		ch <- prometheus.MustNewConstMetric(c.nfsV4callDesc, prometheus.CounterValue, float64(field.Uint()), v.Type().Field(i).Name)
 	}
 }

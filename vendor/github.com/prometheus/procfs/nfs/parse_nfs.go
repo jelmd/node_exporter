@@ -1,4 +1,6 @@
 // Copyright 2018 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,8 +25,8 @@ import (
 )
 
 // ParseClientRPCStats returns stats read from /proc/net/rpc/nfs
-func ParseClientRPCStats(r io.Reader) (*ClientRPCStats, error) {
-	stats := &ClientRPCStats{}
+func ParseProcNetRpcNfsStats(r io.Reader) (*ProcNetRpcNfsStats, error) {
+	stats := &ProcNetRpcNfsStats{}
 
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -35,24 +37,31 @@ func ParseClientRPCStats(r io.Reader) (*ClientRPCStats, error) {
 			return nil, fmt.Errorf("invalid NFS metric line %q", line)
 		}
 
-		values, err := util.ParseUint64s(parts[1:])
+		label := parts[0]
+		if label == "net" {
+			continue
+		}
+		min := 0
+		if label == "proc4" {
+			min = LAST_NFS4_CLNT_OP + 2
+		}
+
+		values, err := util.ParseUint64s(parts[1:], min)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing NFS metric line: %w", err)
 		}
 
-		switch metricLine := parts[0]; metricLine {
-		case "net":
-			stats.Network, err = parseNetwork(values)
+		switch label {
 		case "rpc":
-			stats.ClientRPC, err = parseClientRPC(values)
+			stats.RpcClient, err = parseRpcClient(values)
 		case "proc2":
-			stats.V2Stats, err = parseV2Stats(values)
+			stats.V2stats, err = parseV2stats(values)
 		case "proc3":
-			stats.V3Stats, err = parseV3Stats(values)
+			stats.V3stats, err = parseV3stats(values)
 		case "proc4":
-			stats.ClientV4Stats, err = parseClientV4Stats(values)
+			stats.V4statsClient, err = parseV4statsClient(values)
 		default:
-			return nil, fmt.Errorf("unknown NFS metric line %q", metricLine)
+			return nil, fmt.Errorf("unknown NFS metric line %q", label)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("errors parsing NFS metric line: %w", err)

@@ -1,4 +1,6 @@
 // Copyright 2018 The Prometheus Authors
+// Portions Copyright 2021 Jens Elkner (jel+nex@cs.uni-magdeburg.de)
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +21,7 @@ import (
 
 func parseReplyCache(v []uint64) (ReplyCache, error) {
 	if len(v) != 3 {
-		return ReplyCache{}, fmt.Errorf("invalid ReplyCache line %q", v)
+		return ReplyCache{}, fmt.Errorf("invalid rc line %q", v)
 	}
 
 	return ReplyCache{
@@ -29,23 +31,9 @@ func parseReplyCache(v []uint64) (ReplyCache, error) {
 	}, nil
 }
 
-func parseFileHandles(v []uint64) (FileHandles, error) {
-	if len(v) != 5 {
-		return FileHandles{}, fmt.Errorf("invalid FileHandles, line %q", v)
-	}
-
-	return FileHandles{
-		Stale:        v[0],
-		TotalLookups: v[1],
-		AnonLookups:  v[2],
-		DirNoCache:   v[3],
-		NoDirNoCache: v[4],
-	}, nil
-}
-
 func parseInputOutput(v []uint64) (InputOutput, error) {
 	if len(v) != 2 {
-		return InputOutput{}, fmt.Errorf("invalid InputOutput line %q", v)
+		return InputOutput{}, fmt.Errorf("invalid io line %q", v)
 	}
 
 	return InputOutput{
@@ -54,32 +42,9 @@ func parseInputOutput(v []uint64) (InputOutput, error) {
 	}, nil
 }
 
-func parseThreads(v []uint64) (Threads, error) {
-	if len(v) != 2 {
-		return Threads{}, fmt.Errorf("invalid Threads line %q", v)
-	}
-
-	return Threads{
-		Threads: v[0],
-		FullCnt: v[1],
-	}, nil
-}
-
-func parseReadAheadCache(v []uint64) (ReadAheadCache, error) {
-	if len(v) != 12 {
-		return ReadAheadCache{}, fmt.Errorf("invalid ReadAheadCache line %q", v)
-	}
-
-	return ReadAheadCache{
-		CacheSize:      v[0],
-		CacheHistogram: v[1:11],
-		NotFound:       v[11],
-	}, nil
-}
-
 func parseNetwork(v []uint64) (Network, error) {
 	if len(v) != 4 {
-		return Network{}, fmt.Errorf("invalid Network line %q", v)
+		return Network{}, fmt.Errorf("invalid net line %q", v)
 	}
 
 	return Network{
@@ -90,39 +55,40 @@ func parseNetwork(v []uint64) (Network, error) {
 	}, nil
 }
 
-func parseServerRPC(v []uint64) (ServerRPC, error) {
+func parseRpcServer(v []uint64) (RpcServer, error) {
 	if len(v) != 5 {
-		return ServerRPC{}, fmt.Errorf("invalid RPC line %q", v)
+		return RpcServer{}, fmt.Errorf("invalid rpc line %q", v)
 	}
 
-	return ServerRPC{
-		RPCCount: v[0],
-		BadCnt:   v[1],
+	return RpcServer{
+		Good:     v[0],
+		Bad:      v[1],
 		BadFmt:   v[2],
 		BadAuth:  v[3],
-		BadcInt:  v[4],
+		BadClnt:  v[4],
 	}, nil
 }
 
-func parseClientRPC(v []uint64) (ClientRPC, error) {
+func parseRpcClient(v []uint64) (RpcClient, error) {
 	if len(v) != 3 {
-		return ClientRPC{}, fmt.Errorf("invalid RPC line %q", v)
+		return RpcClient{}, fmt.Errorf("invalid RPC line %q", v)
 	}
 
-	return ClientRPC{
+	return RpcClient{
 		RPCCount:        v[0],
 		Retransmissions: v[1],
 		AuthRefreshes:   v[2],
 	}, nil
 }
 
-func parseV2Stats(v []uint64) (V2Stats, error) {
+func parseV2stats(v []uint64) (V2stats, error) {
 	values := int(v[0])
 	if len(v[1:]) != values || values < 18 {
-		return V2Stats{}, fmt.Errorf("invalid V2Stats line %q", v)
+		return V2stats{}, fmt.Errorf("invalid proc2 line %q", v)
 	}
 
-	return V2Stats{
+	return V2stats{
+		Fields:   v[0],
 		Null:     v[1],
 		GetAttr:  v[2],
 		SetAttr:  v[3],
@@ -130,7 +96,7 @@ func parseV2Stats(v []uint64) (V2Stats, error) {
 		Lookup:   v[5],
 		ReadLink: v[6],
 		Read:     v[7],
-		WrCache:  v[8],
+		WriteCache:  v[8],
 		Write:    v[9],
 		Create:   v[10],
 		Remove:   v[11],
@@ -140,17 +106,18 @@ func parseV2Stats(v []uint64) (V2Stats, error) {
 		MkDir:    v[15],
 		RmDir:    v[16],
 		ReadDir:  v[17],
-		FsStat:   v[18],
+		StatFs:   v[18],
 	}, nil
 }
 
-func parseV3Stats(v []uint64) (V3Stats, error) {
+func parseV3stats(v []uint64) (V3stats, error) {
 	values := int(v[0])
 	if len(v[1:]) != values || values < 22 {
-		return V3Stats{}, fmt.Errorf("invalid V3Stats line %q", v)
+		return V3stats{}, fmt.Errorf("invalid proc3 line %q", v)
 	}
 
-	return V3Stats{
+	return V3stats{
+		Fields:      v[0],
 		Null:        v[1],
 		GetAttr:     v[2],
 		SetAttr:     v[3],
@@ -176,41 +143,33 @@ func parseV3Stats(v []uint64) (V3Stats, error) {
 	}, nil
 }
 
-func parseClientV4Stats(v []uint64) (ClientV4Stats, error) {
+func parseV4statsClient(v []uint64) (V4statsClient, error) {
 	values := int(v[0])
-	if len(v[1:]) != values {
-		return ClientV4Stats{}, fmt.Errorf("invalid ClientV4Stats line %q", v)
+	if len(v) <= 69 || values < 36 {
+		return V4statsClient{}, fmt.Errorf("invalid proc4 line (vals: %d, capacity: %d): %#v", values, len(v), v)
 	}
 
-	// This function currently supports mapping 59 NFS v4 client stats.  Older
-	// kernels may emit fewer stats, so we must detect this and pad out the
-	// values to match the expected slice size.
-	if values < 59 {
-		newValues := make([]uint64, 60)
-		copy(newValues, v)
-		v = newValues
-	}
-
-	return ClientV4Stats{
+	return V4statsClient{
+		Fields:				v[0],
 		Null:               v[1],
 		Read:               v[2],
 		Write:              v[3],
 		Commit:             v[4],
 		Open:               v[5],
 		OpenConfirm:        v[6],
-		OpenNoattr:         v[7],
+		OpenNoAttr:         v[7],
 		OpenDowngrade:      v[8],
 		Close:              v[9],
-		Setattr:            v[10],
+		SetAttr:            v[10],
 		FsInfo:             v[11],
 		Renew:              v[12],
-		SetClientID:        v[13],
-		SetClientIDConfirm: v[14],
+		SetClientId:        v[13],
+		SetClientIdConfirm: v[14],
 		Lock:               v[15],
-		Lockt:              v[16],
-		Locku:              v[17],
+		LockT:              v[16],
+		LockU:              v[17],
 		Access:             v[18],
-		Getattr:            v[19],
+		GetAttr:            v[19],
 		Lookup:             v[20],
 		LookupRoot:         v[21],
 		Remove:             v[22],
@@ -227,10 +186,10 @@ func parseClientV4Stats(v []uint64) (ClientV4Stats, error) {
 		GetACL:             v[33],
 		SetACL:             v[34],
 		FsLocations:        v[35],
-		ReleaseLockowner:   v[36],
-		Secinfo:            v[37],
-		FsidPresent:        v[38],
-		ExchangeID:         v[39],
+		ReleaseLockOwner:   v[36],
+		SecInfo:            v[37],
+		FsIdPresent:        v[38],
+		ExchangeId:         v[39],
 		CreateSession:      v[40],
 		DestroySession:     v[41],
 		Sequence:           v[42],
@@ -240,42 +199,54 @@ func parseClientV4Stats(v []uint64) (ClientV4Stats, error) {
 		GetDeviceInfo:      v[46],
 		LayoutCommit:       v[47],
 		LayoutReturn:       v[48],
-		SecinfoNoName:      v[49],
-		TestStateID:        v[50],
-		FreeStateID:        v[51],
+		SecInfoNoName:      v[49],
+		TestStateId:        v[50],
+		FreeStateId:        v[51],
 		GetDeviceList:      v[52],
 		BindConnToSession:  v[53],
-		DestroyClientID:    v[54],
+		DestroyClientId:    v[54],
 		Seek:               v[55],
 		Allocate:           v[56],
 		DeAllocate:         v[57],
 		LayoutStats:        v[58],
 		Clone:              v[59],
+		Copy:               v[60],
+		OffloadCancel:      v[61],
+		LookupP:            v[62],
+		LayoutError:        v[63],
+		CopyNotify:         v[64],
+		GetXattr:           v[65],
+		SetXattr:           v[66],
+		ListXattrs:         v[67],
+		RemoveXattr:        v[68],
+		ReadPlus:           v[69],
 	}, nil
 }
 
-func parseServerV4Stats(v []uint64) (ServerV4Stats, error) {
+func parseV4statsServer(v []uint64) (V4statsServer, error) {
 	values := int(v[0])
 	if len(v[1:]) != values || values != 2 {
-		return ServerV4Stats{}, fmt.Errorf("invalid V4Stats line %q", v)
+		return V4statsServer{}, fmt.Errorf("invalid proc4 line %q", v)
 	}
 
-	return ServerV4Stats{
+	return V4statsServer{
+		Fields:   v[0],
 		Null:     v[1],
 		Compound: v[2],
 	}, nil
 }
 
-func parseV4Ops(v []uint64) (V4Ops, error) {
+func parseV4ops(v []uint64) (V4ops, error) {
 	values := int(v[0])
-	if len(v[1:]) != values || values < 39 {
-		return V4Ops{}, fmt.Errorf("invalid V4Ops line %q", v)
+	if len(v) <= 76 || values < 40 {
+		return V4ops{}, fmt.Errorf("invalid proc4ops line (vals: %d, capacity: %d): %#v", values, len(v), v)
 	}
 
-	stats := V4Ops{
-		Op0Unused:    v[1],
-		Op1Unused:    v[2],
-		Op2Future:    v[3],
+	stats := V4ops{
+		Fields:       v[0],
+		Unused0:      v[1],
+		Unused1:      v[2],
+		Unused2:      v[3],
 		Access:       v[4],
 		Close:        v[5],
 		Commit:       v[6],
@@ -286,15 +257,15 @@ func parseV4Ops(v []uint64) (V4Ops, error) {
 		GetFH:        v[11],
 		Link:         v[12],
 		Lock:         v[13],
-		Lockt:        v[14],
-		Locku:        v[15],
+		LockT:        v[14],
+		LockU:        v[15],
 		Lookup:       v[16],
-		LookupRoot:   v[17],
+		LookupP:      v[17],
 		Nverify:      v[18],
 		Open:         v[19],
 		OpenAttr:     v[20],
 		OpenConfirm:  v[21],
-		OpenDgrd:     v[22],
+		OpenDowngrade: v[22],
 		PutFH:        v[23],
 		PutPubFH:     v[24],
 		PutRootFH:    v[25],
@@ -308,9 +279,47 @@ func parseV4Ops(v []uint64) (V4Ops, error) {
 		SaveFH:       v[33],
 		SecInfo:      v[34],
 		SetAttr:      v[35],
-		Verify:       v[36],
-		Write:        v[37],
-		RelLockOwner: v[38],
+		SetClientId:        v[36],
+		SetClientIdConfirm: v[37],
+		Verify:             v[38],
+		Write:              v[39],
+		ReleaseLockOwner:   v[40],
+		BackChannelCtl:     v[41],
+		BindConnToSession:  v[42],
+		ExchangeId:         v[43],
+		CreateSession:      v[44],
+		DestroySession:     v[45],
+		FreeStateId:        v[46],
+		GetDirDelegation:	v[47],
+		GetDeviceInfo:      v[48],
+		GetDeviceList:      v[49],
+		LayoutCommit:       v[50],
+		LayoutGet:          v[51],
+		LayoutReturn:       v[52],
+		SecInfoNoName:      v[53],
+		Sequence:           v[54],
+		SetSSV:             v[55],
+		TestStateId:        v[56],
+		WantDelegation:     v[57],
+		DestroyClientId:    v[58],
+		ReclaimComplete:    v[59],
+		Allocate:           v[60],
+		Copy:               v[61],
+		CopyNotify:         v[62],
+		DeAllocate:			v[63],
+		IoAdvise:           v[64],
+		LayoutError:        v[65],
+		LayoutStats:        v[66],
+		OffloadCancel:      v[67],
+		OffloadStatus:      v[68],
+		ReadPlus:           v[69],
+		Seek:               v[70],
+		WriteSame:          v[71],
+		Clone:				v[72],
+		GetXattr:			v[73],
+		SetXattr:			v[74],
+		ListXattrs:			v[75],
+		RemoveXattr:		v[76],
 	}
 
 	return stats, nil
