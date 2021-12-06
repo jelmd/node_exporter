@@ -19,10 +19,12 @@
 package collector
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -34,7 +36,7 @@ import (
 )
 
 var (
-	skipProto = kingpin.Flag("collector.nfsd.skip", "Skip stats for the given comma separated list of NFS versions, i.e. 2, 3, 4, or 4ops.").Default("").String()
+	skipProto = kingpin.Flag("collector.nfsd.skip", "Skip stats for the given comma separated list of NFS versions or stats group, i.e. 2, 3, 4, 4ops, or threads.").Default("").String()
 )
 
 // A nfsdCollector is a Collector which gathers metrics from /proc/net/rpc/nfsd.
@@ -51,10 +53,12 @@ type nfsdCollector struct {
 	nfsV3callDesc    *prometheus.Desc
 	nfsV4callDesc    *prometheus.Desc
 	nfsV4opDesc      *prometheus.Desc
+	nfsdPoolOpDesc   *prometheus.Desc
 	skipV2           bool
 	skipV3           bool
 	skipV4           bool
 	skipV4ops        bool
+	skipThreads      bool
 	logger           log.Logger
 }
 
@@ -65,6 +69,7 @@ func init() {
 const (
 	nfsdSubsystem = "nfsd"
 )
+var poolStatus = []string{"arrived","enqueued","woken","timedout"}
 
 // NewNFSdCollector returns a new Collector exposing /proc/net/rpc/nfsd stats.
 func NewNFSdCollector(logger log.Logger) (Collector, error) {
@@ -72,7 +77,7 @@ func NewNFSdCollector(logger log.Logger) (Collector, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open procfs: %w", err)
 	}
-	skipV2, skipV3, skipV4, skipV4ops := false, false, false, false
+	skipV2, skipV3, skipV4, skipV4ops, skipThreads := false, false, false, false, false
 	v := strings.Split(*skipProto,",")
 	for _, s := range v {
 		s = strings.TrimSpace(s)
@@ -84,6 +89,8 @@ func NewNFSdCollector(logger log.Logger) (Collector, error) {
 			skipV4 = true;
 		} else if s == "4ops" {
 			skipV4ops = true;
+		} else if s == "threads" {
+			skipThreads = true;
 		} else {
 			level.Warn(logger).Log("msg", "Unknown NFS version", s , "ignored.")
 		}
@@ -146,10 +153,16 @@ func NewNFSdCollector(logger log.Logger) (Collector, error) {
 			"Total number of NFS v4 operations by name.",
 			[]string{"name"}, nil,
 		),
+		nfsdPoolOpDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, nfsdSubsystem, "thread_status"),
+			"Thread pool stats counter. See /proc/fs/nfsd/pool_stats.",
+			[]string{"pool", "name"}, nil,
+		),
 		skipV2: skipV2,
 		skipV3: skipV3,
 		skipV4: skipV4,
 		skipV4ops: skipV4ops,
+		skipThreads: skipThreads,
 		logger: logger,
 	}, nil
 }
@@ -175,7 +188,7 @@ func (c *nfsdCollector) Update(ch chan<- prometheus.Metric) error {
 	c.updateNFSdRequestsV3Stats(ch, &stats.V3stats)
 	c.updateNFSdRequestsV4Stats(ch, &stats.V4statsServer)
 	c.updateNFSdRequestsV4Ops(ch, &stats.V4ops)
-
+	c.updateNFSdThreadStats(ch)
 	return nil
 }
 
@@ -266,5 +279,39 @@ func (c *nfsdCollector) updateNFSdRequestsV4Ops(ch chan<- prometheus.Metric, s *
 	for i := int(s.Fields); i > 2; i-- {
 		field := v.Field(i)
 		ch <- prometheus.MustNewConstMetric(c.nfsV4opDesc, prometheus.CounterValue, float64(field.Uint()), v.Type().Field(i).Name)
+	}
+}
+
+// updateNFSdThreadStats collects /proc/fs/nfsd/pool_stats.
+func (c *nfsdCollector) updateNFSdThreadStats(ch chan<- prometheus.Metric) {
+	if c.skipThreads {
+		return
+	}
+
+	file, err := os.Open(procFilePath("fs/nfsd/pool_stats"))
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line[0] == '#' {
+			continue
+		}
+		parts := strings.Fields(scanner.Text())
+		if len(parts) != (len(poolStatus) + 1) {
+			level.Warn(c.logger).Log("msg", "invalid pool_stats line (" + line + ") ignored. Unexpected number of fields.")
+			continue
+		}
+		for i, s := range parts[1:] {
+			u, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				level.Warn(c.logger).Log("msg", "invalid pool field (" + s + ") ignored.")
+				continue
+			}
+			ch <- prometheus.MustNewConstMetric(c.nfsdPoolOpDesc, prometheus.CounterValue, float64(u), parts[0], poolStatus[i])
+		}
 	}
 }
